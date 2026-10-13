@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fizika Csatatér: Hadjárat</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a202c; color: #e2e8f0; max-width: 600px; margin: 20px auto; padding: 20px; border-radius: 12px; }
+        h1 { color: #ecc94b; text-align: center; }
+        .arena { background: #1a202c; border: 2px solid #4a5568; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+        .hp-container { display: flex; justify-content: space-between; margin-bottom: 15px; }
+        .hp-bar-wrapper { width: 45%; }
+        .hp-bar { width: 100%; background: #4a5568; height: 20px; border-radius: 10px; overflow: hidden; border: 1px solid #718096; }
+        .hp-fill { height: 100%; width: 100%; transition: width 0.5s ease; }
+        .hero-hp { background: #38a169; }
+        .boss-hp { background: #e53e3e; }
+        .step { display: none; margin-top: 20px; background: #2d3748; padding: 15px; border-radius: 8px; border: 1px solid #4a5568; }
+        .step.active { display: block; }
+        button { background: #ecc94b; color: #1a202c; border: none; padding: 10px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 15px; width: 100%; box-shadow: 0 3px 0 #b7791f; }
+        button:hover { background: #f6e05e; }
+        button:disabled { background: #718096; box-shadow: none; cursor: not-allowed; }
+        input[type="text"], select { width: 100%; padding: 10px; margin-top: 8px; box-sizing: border-box; border: 2px solid #4a5568; border-radius: 5px; background: #1a202c; color: white; }
+        .feedback { margin-top: 15px; font-weight: bold; text-align: center; padding: 10px; border-radius: 5px; }
+        .damage-effect { animation: shake 0.5s; border: 2px solid #e53e3e; }
+        .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .leaderboard-table th, .leaderboard-table td { padding: 8px; border: 1px solid #4a5568; text-align: left; }
+        .leaderboard-table th { background: #1a202c; color: #ecc94b; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-5px); } }
+        
+        /* Garamond betűtípus a görög karakterekhez és a lenyíló menühöz */
+        .rho-text { font-family: 'Garamond', 'Georgia', serif; font-style: italic; font-weight: bold; font-size: 1.1em; }
+        .garamond-select { font-family: 'Garamond', 'Georgia', serif; font-size: 1.1em; font-style: italic; font-weight: bold; }
+        
+        .btn-choice { display: flex; gap: 10px; margin-top: 15px; }
+        .btn-next { background: #38a169; color: white; box-shadow: 0 3px 0 #276749; }
+        .btn-next:hover { background: #48bb78; }
+        .btn-stop { background: #3182ce; color: white; box-shadow: 0 3px 0 #2b6cb0; }
+        .btn-stop:hover { background: #4299e1; }
+    </style>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body>
+
+    <h1>⚔️ Fizika Hadjárat</h1>
+
+    <div id="loading-screen" style="text-align: center; padding: 20px;">
+        <h3>⏳ Küldetések letöltése a felhőből...</h3>
+        <p>Kérlek várj, kapcsolódunk a Firebase adatbázishoz!</p>
+    </div>
+
+    <div id="game-container" style="display: none;">
+        <div class="arena" id="arena-mesh">
+            <div class="hp-container">
+                <div class="hp-bar-wrapper">
+                    <div style="font-weight: bold; color: #68d391;">🛡️ Te (Hős)</div>
+                    <div class="hp-bar"><div id="hero-hp-fill" class="hp-fill hero-hp"></div></div>
+                    <div id="hero-hp-text" style="font-size: 0.8em; text-align: center;">5 / 5 HP</div>
+                </div>
+                <div class="hp-bar-wrapper">
+                    <div style="font-weight: bold; color: #fc8181; text-align: right;">🦹 Doctor Density</div>
+                    <div class="hp-bar"><div id="boss-hp-fill" class="hp-fill boss-hp"></div></div>
+                    <div id="boss-hp-text" style="font-size: 0.8em; text-align: center;">5 / 5 HP</div>
+                </div>
+            </div>
+            <div id="story-text" style="font-style: italic; color: #cbd5e0; background: #232d3f; padding: 10px; border-radius: 5px;"></div>
+        </div>
+
+        <!-- 1. LÉPÉS -->
+        <div id="step1" class="step active">
+            <h3>1. Kör: Adatkigyűjtés 📝</h3>
+            <p>Gyűjtsd ki a fegyvertáradba a megfelelő adatot!</p>
+            <label>Tömeg (m):</label><select id="m_input"></select><br><br>
+            <label>Térfogat (V):</label><select id="V_input"></select>
+            <button onclick="checkStep1()">Támadás! ⚔️</button>
+            <div id="feedback1" class="feedback"></div>
+        </div>
+		<!-- 2. LÉPÉS -->
+        <div id="step2" class="step">
+            <h3>2. Kör: Energia átváltás 🔄</h3>
+            <p>Válts SI alapmértékegységbe! <b>A mértékegységet is írd oda szóköz nélkül!</b></p>
+            <label>Tömeg SI-ben:</label><input type="text" id="m_convert" placeholder="pl. 10kg" autocomplete="off"><br><br>
+            <label>Térfogat köbméterben (m3):</label><input type="text" id="V_convert" placeholder="pl. 0.005m3" autocomplete="off">
+            <button onclick="checkStep2()">Lézer töltése ⚡</button>
+            <div id="feedback2" class="feedback"></div>
+        </div>
+
+        <!-- 3. LÉPÉS -->
+        <div id="step3" class="step">
+            <h3>3. Kör: A Varázsképlet kiválasztása 🔮</h3>
+            <p>Melyik képlettel tudod eltalálni a gyenge pontját?</p>
+            <select id="formula_input" class="garamond-select">
+                <option value="ures" selected disabled>--- Válassz képletet! ---</option>
+                <option value="rossz">m * V = ρ</option>
+                <option value="rossz2">V / m = ρ</option>
+                <option value="jo">ρ = m / V</option>
+            </select>
+            <button onclick="checkStep3()">Képlet aktiválása 🔥</button>
+            <div id="feedback3" class="feedback"></div>
+        </div>
+
+        <!-- 4. LÉPÉS -->
+        <div id="step4" class="step">
+            <h3>4. Kör: Behelyettesítés 🧩</h3>
+            <p>Töltsd be az adatokat! Formátum: <b>mérőszám m.egység / mérőszám m.egység</b> (pl. 10kg/0.005m3)</p>
+            <label class="rho-text">ρ = </label><input type="text" id="substitution_input" placeholder="pl. 10kg/0.005m3" autocomplete="off">
+            <button onclick="checkStep4()">Célzás rögzítése 🎯</button>
+            <div id="feedback4" class="feedback"></div>
+        </div>
+
+        <!-- 5. LÉPÉS -->
+        <div id="step5" class="step">
+            <h3>5. Kör: Végső Csapás (Számolás) 🧮</h3>
+            <p>Számold ki a sűrűséget! <b>Mértékegységet (kg/m3) is írd oda!</b></p>
+            <label>A rög sűrűsége (<span class="rho-text">ρ</span>):</label><input type="text" id="final_result" placeholder="pl. 2000kg/m3" autocomplete="off">
+            <button onclick="checkStep5()">TŰZ! 💥</button>
+            <div id="feedback5" class="feedback"></div>
+        </div>
+
+        <!-- DÖNTÉSI PANEL (KÖRÖK VÉGÉN) -->
+        <div id="choice-panel" class="step">
+            <h3>🎉 Szektor megtisztítva!</h3>
+            <p>Szép munka! Hogyan szeretnéd folytatni a hadjáratot?</p>
+            <div class="btn-choice">
+                <button class="btn-next" onclick="folytatJatekot()">Következő szektor ⚔️</button>
+                <button class="btn-stop" onclick="befejezJatekot()">Játék befejezése és mentés 🏆</button>
+            </div>
+        </div>
+
+        <!-- CSATA VÉGE -->
+        <div id="endGame" class="step">
+            <h3 id="end-title" style="text-align: center; font-size: 1.5em;"></h3>
+            <p id="end-text" style="text-align: center;"></p>
+            <div id="save-score-section" style="background: #1a202c; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <h4>🏆 Küldd be az eredményed a dicsőségfalra!</h4>
+                <input type="text" id="player-name" placeholder="Írd ide a neved..." autocomplete="off">
+                <button id="submit-score-btn" onclick="submitScore()">Pontszám mentése 💾</button>
+            </div>
+            <div style="margin-top: 25px;">
+                <h4>📊 Globális Ranglista (Top Diákok)</h4>
+                <table class="leaderboard-table">
+                    <thead><tr><th>Helyezés</th><th>Név</th><th>Pontszám</th></tr></thead>
+                    <tbody id="leaderboard-body"></tbody>
+                </table>
+            </div>
+            <button onclick="location.reload()" style="background: #38a169; color: white; margin-top: 20px;">Új csata indítása 🔄</button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Konfiguráció
+        const firebaseConfig = {
+            apiKey: "AIzaSyC4ypKsFziwbyOQ87Sb-1PrrIZcvLf1_xQ",
+            authDomain: "://firebaseapp.com",
+            databaseURL: "https://fizikadomino-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "fizikadomino",
+            storageBucket: "fizikadomino.firebasestorage.app",
+            messagingSenderId: "272119065201",
+            appId: "1:272119065201:web:c6bdc223fd9a61394f49d0",
+            measurementId: "G-6PNNLQV1GH"
+        };
+        
+        // Inicializálás
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Játék változók
+        let feladatokLista = [], ranglistaLista = [];
+        let aktualisFeladat = null, felhasznaltIndexek = [];
+        let heroHP = 5, bossHP = 5, osszPontszam = 0, aktualisKorPont = 5, aktualisSzintszam = 1;
+        const MAX_SZINTSZAM = 5;
+        const BOSS_MAX_HP = 5; // Doctor Density teljes életereje mostantól fixen 5 HP
+		const HERO_MAX_HP = 5;
+		window.onload = function() {
+            AdatokBetoltese();
+        };
+
+        // Adatok lekérése a Firebase adatbázisból
+        function AdatokBetoltese() {
+            database.ref().once('value').then(snapshot => {
+                const data = snapshot.val() || {};
+                
+                // 1. Feladatok ellenőrzése és betöltése
+                if (data.feladatok) {
+                    feladatokLista = Array.isArray(data.feladatok) ? data.feladatok : Object.values(data.feladatok);
+                }
+
+                // Ha teljesen üres az adatbázis, létrehozunk egy tiszta minta feladatot
+                if (feladatokLista.length === 0) {
+                    const mintaFeladat = {
+                        szoveg: "Egy múzeumban őrzött nehéz rög tömege 38.6 kg. A rög térfogata pontosan 2 l. Mekkora a rög sűrűsége?",
+                        m_szam: "38.6kg",
+                        V_szam: "2l",
+                        helyes_res: "19300kg/m3"
+                    };
+                    database.ref('feladatok').push(mintaFeladat);
+                    feladatokLista.push(mintaFeladat);
+                }
+
+                // 2. Ranglista feldolgozása (Top 10 csökkenő sorrendben az új kulccsal)
+                if (data.ranglista) {
+                    ranglistaLista = Object.values(data.ranglista);
+                    ranglistaLista.sort((a, b) => (b.score || 0) - (a.score || 0));
+                    ranglistaLista = ranglistaLista.slice(0, 10);
+                }
+
+                // Játék indítása
+                inditUjKor();
+            }).catch(e => {
+                console.error(e);
+                document.getElementById('loading-screen').innerHTML = "<h3>❌ Firebase kapcsolódási hiba!</h3><p>Ellenőrizd a szabályokat (Rules) a Firebase konzolban!</p>";
+            });
+        }
+
+        function inditUjKor() {
+            if(felhasznaltIndexek.length >= feladatokLista.length) { felhasznaltIndexek = []; }
+            let idx;
+            do { idx = Math.floor(Math.random() * feladatokLista.length); } while(felhasznaltIndexek.includes(idx) && feladatokLista.length > 1);
+            felhasznaltIndexek.push(idx);
+            aktualisFeladat = feladatokLista[idx];
+            bossHP = BOSS_MAX_HP; aktualisKorPont = 5; updateHP();
+
+            document.querySelector('h1').innerText = `⚔️ Fizika Hadjárat (${aktualisSzintszam}. szektor)`;
+            document.getElementById('story-text').innerHTML = `<strong>Küldetésed:</strong> ${aktualisFeladat.szoveg}`;
+
+            for(let i=1; i<=5; i++) { document.getElementById('step'+i).classList.remove('active'); document.getElementById('feedback'+i).innerHTML = ""; }
+            document.getElementById('choice-panel').classList.remove('active');
+            document.getElementById('step1').classList.add('active');
+
+            // 1. KÖR JAVÍTÁSA: Most már a teljes mértékegységes adatot pakoljuk be a legördülőbe
+            document.getElementById('m_input').innerHTML = `<option value="rossz">m = ${aktualisFeladat.V_szam}</option><option value="jo">m = ${aktualisFeladat.m_szam}</option><option value="rossz2">m = ${aktualisFeladat.helyes_res}</option>`;
+            document.getElementById('V_input').innerHTML = `<option value="rossz">V = ${aktualisFeladat.m_szam}</option><option value="jo">V = ${aktualisFeladat.V_szam}</option><option value="rossz2">V = 1m3</option>`;
+
+            document.getElementById('m_convert').value = ""; document.getElementById('V_convert').value = "";
+            document.getElementById('substitution_input').value = "";
+            document.getElementById('final_result').value = "";
+            document.getElementById('formula_input').selectedIndex = 0;
+            document.getElementById('loading-screen').style.display = 'none'; 
+            document.getElementById('game-container').style.display = 'block';
+        }
+
+        // HP CSÍK JAVÍTÁSA: Arányos százalékszámítás az 5 HP-s gonosznak
+        function updateHP() {
+    // JAVÍTÁS: Arányos százalékszámítás a Hős 5 HP-s életerejéhez
+    let heroPercentage = (heroHP / HERO_MAX_HP) * 100;
+    if(heroPercentage < 0) heroPercentage = 0;
+    document.getElementById('hero-hp-fill').style.width = heroPercentage + '%'; 
+    document.getElementById('hero-hp-text').innerText = heroHP + ' / ' + HERO_MAX_HP + ' HP';
+    
+    let bossPercentage = (bossHP / BOSS_MAX_HP) * 100;
+    if(bossPercentage < 0) bossPercentage = 0;
+    document.getElementById('boss-hp-fill').style.width = bossPercentage + '%'; 
+    document.getElementById('boss-hp-text').innerText = bossHP + ' / ' + BOSS_MAX_HP + ' HP';
+}
+        
+        function damageAnimation() { 
+            let a = document.getElementById('arena-mesh'); 
+            a.classList.add('damage-effect'); 
+            setTimeout(() => { a.classList.remove('damage-effect'); }, 500); 
+        }
+        
+        function nextStep(c, n) { 
+            document.getElementById(c).classList.remove('active'); 
+            document.getElementById(n).classList.add('active'); 
+        }
+
+        function checkStep1() {
+            if (document.getElementById('m_input').value === 'jo' && document.getElementById('V_input').value === 'jo') {
+                bossHP -= 1; updateHP(); damageAnimation(); 
+                document.getElementById('feedback1').innerHTML = "<span style='color: #68d391;'>Találat! -1 HP</span>";
+                setTimeout(() => { nextStep('step1', 'step2'); }, 1500);
+            } else { 
+                heroHP -= 1; aktualisKorPont -= 1; updateHP(); 
+                document.getElementById('feedback1').innerHTML = "<span style='color: #fc8181;'>Mellé! -1 HP</span>"; 
+                if (heroHP <= 0) setTimeout(() => { gameOver('lose'); }, 1000); 
+            }
+        }
+
+        function checkStep2() {
+            let m_u = document.getElementById('m_convert').value.replace(/\s+/g, '').toLowerCase().replace(',', '.');
+            let V_u = document.getElementById('V_convert').value.replace(/\s+/g, '').toLowerCase().replace('³', '3').replace(',', '.');
+            let fb = document.getElementById('feedback2');
+            
+            let m_t = parseFloat(aktualisFeladat.m_szam).toString();
+            let V_s = aktualisFeladat.V_szam.toString().toLowerCase();
+            let V_j = "";
+            
+            if (V_s.includes('l')) { V_j = (parseFloat(V_s) / 1000).toString(); }
+            else if (V_s.includes('cm3') || V_s.includes('cm³')) { V_j = (parseFloat(V_s) / 1000000).toString(); }
+            else { V_j = parseFloat(V_s).toString(); }
+
+            if (m_u === m_t + "kg" && V_u === V_j + "m3") {
+                bossHP -= 1; updateHP(); damageAnimation(); 
+                fb.innerHTML = "<span style='color: #68d391;'>Lézer feltöltve! -1 HP</span>";
+                setTimeout(() => { nextStep('step2', 'step3'); }, 1500);
+            } else { 
+                heroHP -= 1; aktualisKorPont -= 1; updateHP(); 
+                fb.innerHTML = "<span style='color: #fc8181;'>Hiba! Csak a pontos SI adatot fogadom el! -1 HP</span>"; 
+                if (heroHP <= 0) setTimeout(() => { gameOver('lose'); }, 1000); 
+            }
+        }
+		function checkStep3() {
+            if (document.getElementById('formula_input').value === 'jo') {
+                bossHP -= 1; updateHP(); damageAnimation(); 
+                document.getElementById('feedback3').innerHTML = "<span style='color: #68d391;'>Képlet aktív! -1 HP</span>";
+                setTimeout(() => { nextStep('step3', 'step4'); }, 1500);
+            } else { 
+                heroHP -= 1; aktualisKorPont -= 1; updateHP(); 
+                document.getElementById('feedback3').innerHTML = "<span style='color: #fc8181;'>Rossz képlet! -1 HP</span>"; 
+                if (heroHP <= 0) setTimeout(() => { gameOver('lose'); }, 1000); 
+            }
+        }
+
+        function checkStep4() {
+            let sub = document.getElementById('substitution_input').value.replace(/\s+/g, '').toLowerCase().replace('³', '3').replace(',', '.');
+            let m_t = parseFloat(aktualisFeladat.m_szam).toString();
+            let V_s = aktualisFeladat.V_szam.toString().toLowerCase();
+            let V_j = "";
+            
+            if (V_s.includes('l')) { V_j = (parseFloat(V_s) / 1000).toString(); }
+            else if (V_s.includes('cm3') || V_s.includes('cm³')) { V_j = (parseFloat(V_s) / 1000000).toString(); }
+            else { V_j = parseFloat(V_s).toString(); }
+
+            if (sub === m_t + "kg/" + V_j + "m3" || sub === m_t + "kg:" + V_j + "m3") {
+                bossHP -= 1; updateHP(); damageAnimation(); 
+                document.getElementById('feedback4').innerHTML = "<span style='color: #68d391;'>Célzás rögzítve! -1 HP</span>";
+                setTimeout(() => { nextStep('step4', 'step5'); }, 1500);
+            } else { 
+                heroHP -= 1; aktualisKorPont -= 1; updateHP(); 
+                document.getElementById('feedback4').innerHTML = "<span style='color: #fc8181;'>Nem a pontos SI adatokat osztottad el! -1 HP</span>"; 
+                if (heroHP <= 0) setTimeout(() => { gameOver('lose'); }, 1000); 
+            }
+        }
+
+        function checkStep5() {
+    let res = document.getElementById('final_result').value.replace(/\s+/g, '').toLowerCase().replace('³', '3').replace(',', '.');
+    let t_h = aktualisFeladat.helyes_res.toString().replace(/\s+/g, '').toLowerCase().replace('³', '3').replace(',', '.');
+    
+    if (res === t_h) {
+        bossHP = 0; updateHP(); damageAnimation(); 
+        document.getElementById('feedback5').innerHTML = "<span style='color: #68d391;'>Kritikus találat!</span>";
+        
+        // JAVÍTÁS: A minimum pontot levesszük 1-re, így nem ugrik fel 10-re a pontszám!
+        if(aktualisKorPont < 1) aktualisKorPont = 1; 
+        osszPontszam += aktualisKorPont;
+        
+        setTimeout(() => {
+            nextStep('step5', 'choice-panel');
+        }, 1500);
+    } else { 
+        heroHP -= 1; aktualisKorPont -= 1; updateHP(); 
+        document.getElementById('feedback5').innerHTML = "<span style='color: #fc8181;'>Rossz számolás! -1 HP</span>"; 
+        if (heroHP <= 0) setTimeout(() => { gameOver('lose'); }, 1000); 
+    }
+}
+
+        function folytatJatekot() {
+            if (aktualisSzintszam < MAX_SZINTSZAM) { 
+                aktualisSzintszam++; 
+                inditUjKor(); 
+            } else { 
+                gameOver('win'); 
+            }
+        }
+
+        function befejezJatekot() {
+            gameOver('win');
+        }
+
+        function gameOver(s) {
+            for(let i=1; i<=5; i++) { document.getElementById('step'+i).classList.remove('active'); }
+            document.getElementById('choice-panel').classList.remove('active');
+            document.getElementById('endGame').classList.add('active');
+            
+            if (s === 'win') {
+                document.getElementById('end-title').innerHTML = "🏆 HADJÁRAT BEFEJEZVE!"; 
+                document.getElementById('end-title').style.color = "#38a169";
+                document.getElementById('end-text').innerText = `Sikeresen teljesítettél ${aktualisSzintszam} szektort! Elért pontszám: ${osszPontszam} XP.`;
+                document.getElementById('save-score-section').style.display = 'block';
+            } else {
+                document.getElementById('end-title').innerHTML = "💀 ELBUKTÁL!"; 
+                document.getElementById('end-title').style.color = "#e53e3e";
+                document.getElementById('end-text').innerText = `${aktualisSzintszam-1} szektort teljesítettél sikeresen, de a(z) ${aktualisSzintszam}. szektorban elestél.`;
+                document.getElementById('save-score-section').style.display = 'none';
+            }
+            rajzolRanglista();
+        }
+
+        function rajzolRanglista() {
+            let h = "";
+            if(ranglistaLista && ranglistaLista.length > 0) {
+                ranglistaLista.forEach((r, idx) => { 
+                    // Biztonsági ellenőrzés az angol mezőnevekre (ha egy régi adat miatt üres lenne, kap egy alapértelmezett nevet/pontot)
+                    let currentName = r.name ? r.name : (r.nev ? r.nev : "Névtelen hős");
+                    let currentScore = r.score !== undefined ? r.score : (r.pont !== undefined ? r.pont : 0);
+                    h += `<tr><td>${idx + 1}.</td><td>${currentName}</td><td>${currentScore} XP</td></tr>`; 
+                });
+            } else { h = "<tr><td colspan='3' style='text-align:center;'>A dicsőségfal még üres!</td></tr>"; }
+            document.getElementById('leaderboard-body').innerHTML = h;
+        }
+
+        function submitScore() {
+            const playerName = document.getElementById('player-name').value.trim(); 
+            if(!playerName) { alert("Írj be egy nevet!"); return; }
+            
+            document.getElementById('submit-score-btn').disabled = true; 
+            document.getElementById('submit-score-btn').innerText = "Küldés...";
+            
+            // Szigorúan angol kulcsok használata
+            const ujEredmeny = { name: playerName, score: osszPontszam, timestamp: Date.now() };
+
+            database.ref('ranglista').push(ujEredmeny).then(() => {
+                alert("Elmentve!"); 
+                document.getElementById('save-score-section').innerHTML = "<p style='color: #68d391; text-align:center;'>🎯 Mentve a dicsőségfalra!</p>";
+                
+                ranglistaLista.push(ujEredmeny); 
+                ranglistaLista.sort((a,b) => (b.score || 0) - (a.score || 0));
+                ranglistaLista = ranglistaLista.slice(0, 10); 
+                rajzolRanglista();
+            }).catch(e => { 
+                console.error(e);
+                alert("Hiba a mentésnél! Ellenőrizd az adatbázis hozzáférési szabályait."); 
+                document.getElementById('submit-score-btn').disabled = false; 
+                document.getElementById('submit-score-btn').innerText = "Pontszám mentése 💾";
+            });
+        }
+    </script>
+</body>
+</html>
